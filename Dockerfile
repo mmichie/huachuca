@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.22-alpine AS builder
+FROM golang:1.23-alpine AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
@@ -7,11 +7,11 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o /auth-service
 
 # Development stage
-FROM golang:1.22-alpine AS development
+FROM golang:1.23-alpine AS development
 RUN apk add --no-cache git
 WORKDIR /app
 # Install air for hot reload
-RUN go install github.com/cosmtrek/air@latest
+RUN go install github.com/air-verse/air@latest
 # Install goose for migrations
 RUN go install github.com/pressly/goose/v3/cmd/goose@latest
 CMD ["air"]
