@@ -1,27 +1,50 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 )
 
 type Server struct {
-	db     *DB
-	logger *slog.Logger
+	db           *DB
+	logger       *slog.Logger
+	tokenManager *TokenManager
+	auth         *AuthMiddleware
+	oauth        *OAuthConfig
 }
 
-func NewServer(db *DB) *Server {
+type HealthResponse struct {
+	Status string `json:"status"`
+	DB     bool   `json:"database"`
+}
+
+func NewServer(db *DB) (*Server, error) {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
 	}))
 
-	return &Server{
-		db:     db,
-		logger: logger,
+	tokenManager, err := NewTokenManager()
+	if err != nil {
+		return nil, err
 	}
+
+	srv := &Server{
+		db:           db,
+		logger:       logger,
+		tokenManager: tokenManager,
+		oauth:        NewOAuthConfig(),
+	}
+
+	srv.auth = NewAuthMiddleware(tokenManager, db)
+	return srv, nil
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -31,22 +54,42 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"remote_addr", r.RemoteAddr,
 	)
 
-	switch {
-	case r.URL.Path == "/health":
+	// Set security headers
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-XSS-Protection", "1; mode=block")
+
+	// Public endpoints
+	switch r.URL.Path {
+	case "/health":
 		s.handleHealth(w, r)
-	case r.URL.Path == "/organizations":
-		s.handleCreateOrganization(w, r)
-	case strings.HasPrefix(r.URL.Path, "/organizations/users"):
-		s.handleAddUser(w, r)
-	case strings.HasPrefix(r.URL.Path, "/organizations/"):
-		s.handleGetOrganizationUsers(w, r)
-	default:
-		http.NotFound(w, r)
+		return
+	case "/auth/login/google":
+		s.handleGoogleLogin(w, r)
+		return
+	case "/auth/callback/google":
+		s.handleGoogleCallback(w, r)
+		return
 	}
+
+	// Protected endpoints with authentication
+	protectedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/organizations":
+			s.handleCreateOrganization(w, r)
+		case strings.HasPrefix(r.URL.Path, "/organizations/users"):
+			s.handleAddUser(w, r)
+		case strings.HasPrefix(r.URL.Path, "/organizations/"):
+			s.handleGetOrganizationUsers(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	// Apply authentication middleware
+	s.auth.RequireAuth(protectedHandler).ServeHTTP(w, r)
 }
 
-
-// handleHealth handles the health check endpoint
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -67,17 +110,61 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}))
+	// Load configuration from environment
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://huachuca_user:huachuca_password@localhost:5432/huachuca?sslmode=disable"
+	}
 
-	srv := NewServer(nil)
-
-	addr := ":8080"
-	logger.Info("starting server", "addr", addr)
-
-	if err := http.ListenAndServe(addr, srv); err != nil {
-		logger.Error("server error", "error", err)
+	// Connect to database
+	db, err := NewDB(dbURL)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to connect to database: %v\n", err)
 		os.Exit(1)
 	}
+	defer db.Close()
+
+	// Create server
+	srv, err := NewServer(db)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to create server: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Create HTTP server with timeouts
+	httpServer := &http.Server{
+		Addr:         ":8080",
+		Handler:      srv,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	// Start server in goroutine
+	go func() {
+		srv.logger.Info("starting server", "addr", httpServer.Addr)
+		if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {
+			srv.logger.Error("server error", "error", err)
+			os.Exit(1)
+		}
+	}()
+
+	// Wait for interrupt signal
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	sig := <-quit
+
+	srv.logger.Info("shutting down server", "signal", sig)
+
+	// Create context with timeout for shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Attempt graceful shutdown
+	if err := httpServer.Shutdown(ctx); err != nil {
+		srv.logger.Error("server forced to shutdown", "error", err)
+		os.Exit(1)
+	}
+
+	srv.logger.Info("server stopped gracefully")
 }

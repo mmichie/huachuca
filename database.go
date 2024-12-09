@@ -2,7 +2,9 @@ package main
 
 import (
 	"github.com/jmoiron/sqlx"
+	"github.com/google/uuid"
 	_ "github.com/lib/pq"
+	"context"
 )
 
 // DB wraps sqlx.DB to add custom functionality
@@ -27,4 +29,18 @@ func NewDB(dataSourceName string) (*DB, error) {
 // Ping checks database connectivity
 func (db *DB) Ping() error {
 	return db.DB.Ping()
+}
+
+
+// GetUser retrieves a user by ID
+func (db *DB) GetUser(ctx context.Context, id uuid.UUID) (*User, error) {
+	user := &User{}
+	err := db.GetContext(ctx, user, `
+		SELECT id, email, name, organization_id, role, permissions, created_at
+		FROM users WHERE id = $1
+	`, id)
+	if err != nil {
+		return nil, err
+	}
+	return user, nil
 }

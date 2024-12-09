@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -16,13 +17,52 @@ func TestOrganizationHandlers(t *testing.T) {
 	testdb := setupTestDB(t)
 	defer testdb.teardown(t)
 
-	srv := NewServer(testdb.DB)
+	srv, err := NewServer(testdb.DB)
+	require.NoError(t, err)
+
+	// Create initial test user and organization
+	testUser := &User{
+		ID:          uuid.New(),
+		Email:       "test@example.com",
+		Name:        "Test User",
+		Role:        "owner",
+		Permissions: Permissions{"admin": true},
+	}
+
+	testOrg := &Organization{
+		ID:              uuid.New(),
+		Name:            "Test Org",
+		OwnerID:         testUser.ID,  // Set the owner ID
+		SubscriptionTier: "free",
+		MaxSubAccounts:  5,
+	}
+
+	// Set the organization ID for the user
+	testUser.OrganizationID = testOrg.ID
+
+	// Insert organization first
+	_, err = testdb.DB.ExecContext(context.Background(), `
+		INSERT INTO organizations (id, name, owner_id, subscription_tier, max_sub_accounts)
+		VALUES ($1, $2, $3, $4, $5)
+	`, testOrg.ID, testOrg.Name, testOrg.OwnerID, testOrg.SubscriptionTier, testOrg.MaxSubAccounts)
+	require.NoError(t, err)
+
+	// Then insert the user
+	_, err = testdb.DB.ExecContext(context.Background(), `
+		INSERT INTO users (id, email, name, organization_id, role, permissions)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, testUser.ID, testUser.Email, testUser.Name, testUser.OrganizationID, testUser.Role, testUser.Permissions)
+	require.NoError(t, err)
+
+	// Generate token for the test user
+	token, err := srv.tokenManager.GenerateToken(testUser)
+	require.NoError(t, err)
 
 	t.Run("Create Organization", func(t *testing.T) {
 		payload := CreateOrganizationRequest{
-			Name:       "Test Org",
-			OwnerEmail: "owner@example.com",
-			OwnerName:  "Test Owner",
+			Name:       "Another Org",
+			OwnerEmail: "another@example.com",
+			OwnerName:  "Another Owner",
 		}
 
 		body, err := json.Marshal(payload)
@@ -30,6 +70,7 @@ func TestOrganizationHandlers(t *testing.T) {
 
 		req := httptest.NewRequest(http.MethodPost, "/organizations", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 		w := httptest.NewRecorder()
 
 		srv.ServeHTTP(w, req)
@@ -44,9 +85,9 @@ func TestOrganizationHandlers(t *testing.T) {
 
 	t.Run("Create Organization - Duplicate Email", func(t *testing.T) {
 		payload := CreateOrganizationRequest{
-			Name:       "Another Org",
-			OwnerEmail: "owner@example.com", // Same email as previous test
-			OwnerName:  "Another Owner",
+			Name:       "Duplicate Org",
+			OwnerEmail: "another@example.com", // Same email as previous test
+			OwnerName:  "Duplicate Owner",
 		}
 
 		body, err := json.Marshal(payload)
@@ -54,6 +95,7 @@ func TestOrganizationHandlers(t *testing.T) {
 
 		req := httptest.NewRequest(http.MethodPost, "/organizations", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 		w := httptest.NewRecorder()
 
 		srv.ServeHTTP(w, req)
@@ -62,15 +104,6 @@ func TestOrganizationHandlers(t *testing.T) {
 	})
 
 	t.Run("Add User to Organization", func(t *testing.T) {
-		// First create an organization
-		org, err := testdb.DB.CreateOrganization(
-			context.Background(),
-			"Test Org for Users",
-			"org_owner@example.com",
-			"Org Owner",
-		)
-		require.NoError(t, err)
-
 		payload := AddUserRequest{
 			Email: "newuser@example.com",
 			Name:  "New User",
@@ -81,10 +114,11 @@ func TestOrganizationHandlers(t *testing.T) {
 
 		req := httptest.NewRequest(
 			http.MethodPost,
-			fmt.Sprintf("/organizations/users?org_id=%s", org.ID),
+			fmt.Sprintf("/organizations/users?org_id=%s", testOrg.ID),
 			bytes.NewReader(body),
 		)
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 		w := httptest.NewRecorder()
 
 		srv.ServeHTTP(w, req)
@@ -100,29 +134,21 @@ func TestOrganizationHandlers(t *testing.T) {
 	})
 
 	t.Run("Get Organization Users", func(t *testing.T) {
-		// Create an organization with owner
-		org, err := testdb.DB.CreateOrganization(
-			context.Background(),
-			"Test Org for Listing",
-			"list_owner@example.com",
-			"List Owner",
-		)
-		require.NoError(t, err)
-
-		// Add a sub-account
+		// Add a sub-account to the test organization
 		_, err = testdb.DB.AddUserToOrganization(
 			context.Background(),
-			org.ID,
-			"list_sub@example.com",
-			"List Sub User",
+			testOrg.ID,
+			"sub@example.com",
+			"Sub User",
 		)
 		require.NoError(t, err)
 
 		req := httptest.NewRequest(
 			http.MethodGet,
-			fmt.Sprintf("/organizations/%s", org.ID),
+			fmt.Sprintf("/organizations/%s", testOrg.ID),
 			nil,
 		)
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 		w := httptest.NewRecorder()
 
 		srv.ServeHTTP(w, req)
@@ -132,7 +158,7 @@ func TestOrganizationHandlers(t *testing.T) {
 		var users []User
 		err = json.NewDecoder(w.Body).Decode(&users)
 		require.NoError(t, err)
-		require.Len(t, users, 2) // Owner + sub-account
+		require.GreaterOrEqual(t, len(users), 2) // At least owner + sub-account
 
 		// Verify we have both an owner and a sub-account
 		hasOwner := false

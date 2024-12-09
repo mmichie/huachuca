@@ -5,22 +5,19 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
-type HealthResponse struct {
-	Status string `json:"status"`
-	DB     bool   `json:"database"`
-}
-
 func TestHealthCheck(t *testing.T) {
-	// Setup test database
+	// Create a test database
 	testdb := setupTestDB(t)
 	defer testdb.teardown(t)
 
-	// Create server with test database
-	srv := NewServer(testdb.DB)
+	// Create server with actual database
+	srv, err := NewServer(testdb.DB)
+	require.NoError(t, err)
 
-	// Test cases
 	tests := []struct {
 		name           string
 		method         string
@@ -48,23 +45,14 @@ func TestHealthCheck(t *testing.T) {
 
 			srv.ServeHTTP(w, req)
 
-			if w.Code != tc.expectedStatus {
-				t.Errorf("Expected status code %d, got %d", tc.expectedStatus, w.Code)
-			}
+			require.Equal(t, tc.expectedStatus, w.Code)
 
 			if tc.expectedStatus == http.StatusOK {
 				var resp HealthResponse
-				if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-					t.Fatalf("Failed to decode response: %v", err)
-				}
-
-				if resp.Status != "ok" {
-					t.Errorf("Expected status 'ok', got '%s'", resp.Status)
-				}
-
-				if resp.DB != tc.expectedDB {
-					t.Errorf("Expected DB status %v, got %v", tc.expectedDB, resp.DB)
-				}
+				err := json.NewDecoder(w.Body).Decode(&resp)
+				require.NoError(t, err)
+				require.Equal(t, "ok", resp.Status)
+				require.Equal(t, tc.expectedDB, resp.DB)
 			}
 		})
 	}
