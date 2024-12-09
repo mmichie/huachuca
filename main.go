@@ -73,21 +73,36 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Protected endpoints with authentication
-	protectedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	baseHandler := s.auth.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/organizations":
-			s.handleCreateOrganization(w, r)
-		case strings.HasPrefix(r.URL.Path, "/organizations/users"):
-			s.handleAddUser(w, r)
+			// Creating an org requires the create:org permission
+			s.auth.RequirePermissions(PermCreateOrg)(
+				http.HandlerFunc(s.handleCreateOrganization),
+			).ServeHTTP(w, r)
+
+		case strings.HasPrefix(r.URL.Path, "/organizations/") && strings.HasSuffix(r.URL.Path, "/users"):
+			// Adding users requires the invite:user permission and same org
+			s.auth.RequirePermissions(PermInviteUser)(
+				s.auth.RequireSameOrg(
+					http.HandlerFunc(s.handleAddUser),
+				),
+			).ServeHTTP(w, r)
+
 		case strings.HasPrefix(r.URL.Path, "/organizations/"):
-			s.handleGetOrganizationUsers(w, r)
+			// Reading org users requires the read:org permission and same org
+			s.auth.RequirePermissions(PermReadOrg)(
+				s.auth.RequireSameOrg(
+					http.HandlerFunc(s.handleGetOrganizationUsers),
+				),
+			).ServeHTTP(w, r)
+
 		default:
 			http.NotFound(w, r)
 		}
-	})
+	}))
 
-	// Apply authentication middleware
-	s.auth.RequireAuth(protectedHandler).ServeHTTP(w, r)
+	baseHandler.ServeHTTP(w, r)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

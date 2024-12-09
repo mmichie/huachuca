@@ -103,7 +103,7 @@ func TestOrganizationHandlers(t *testing.T) {
 		require.Equal(t, http.StatusConflict, w.Code)
 	})
 
-	t.Run("Add User to Organization", func(t *testing.T) {
+t.Run("Add User to Organization", func(t *testing.T) {
 		payload := AddUserRequest{
 			Email: "newuser@example.com",
 			Name:  "New User",
@@ -114,7 +114,7 @@ func TestOrganizationHandlers(t *testing.T) {
 
 		req := httptest.NewRequest(
 			http.MethodPost,
-			fmt.Sprintf("/organizations/users?org_id=%s", testOrg.ID),
+			fmt.Sprintf("/organizations/%s/users", testOrg.ID),
 			bytes.NewReader(body),
 		)
 		req.Header.Set("Content-Type", "application/json")

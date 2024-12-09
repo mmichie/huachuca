@@ -68,7 +68,8 @@ func (am *AuthMiddleware) RequireAuth(next http.Handler) http.Handler {
 	})
 }
 
-func (am *AuthMiddleware) RequireRole(roles ...string) func(http.Handler) http.Handler {
+// RequirePermissions middleware ensures the user has all required permissions
+func (am *AuthMiddleware) RequirePermissions(perms ...Permission) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user, err := GetUserFromContext(r.Context())
@@ -77,15 +78,7 @@ func (am *AuthMiddleware) RequireRole(roles ...string) func(http.Handler) http.H
 				return
 			}
 
-			hasRole := false
-			for _, role := range roles {
-				if user.Role == role {
-					hasRole = true
-					break
-				}
-			}
-
-			if !hasRole {
+			if !user.HasAllPermissions(perms...) {
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}
@@ -93,4 +86,54 @@ func (am *AuthMiddleware) RequireRole(roles ...string) func(http.Handler) http.H
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// RequireAnyPermission middleware ensures the user has at least one of the required permissions
+func (am *AuthMiddleware) RequireAnyPermission(perms ...Permission) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			user, err := GetUserFromContext(r.Context())
+			if err != nil {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			if !user.HasAnyPermission(perms...) {
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// RequireSameOrg middleware ensures the user belongs to the organization they're trying to access
+func (am *AuthMiddleware) RequireSameOrg(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, err := GetUserFromContext(r.Context())
+		if err != nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		// Extract org ID from URL or request body
+		var targetOrgID string
+		if strings.Contains(r.URL.Path, "/organizations/") {
+			parts := strings.Split(r.URL.Path, "/")
+			for i, part := range parts {
+				if part == "organizations" && i+1 < len(parts) {
+					targetOrgID = parts[i+1]
+					break
+				}
+			}
+		}
+
+		if targetOrgID != "" && targetOrgID != user.OrganizationID.String() {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }

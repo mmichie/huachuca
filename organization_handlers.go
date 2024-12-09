@@ -54,9 +54,14 @@ func (s *Server) handleAddUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract organization ID from URL query
-	orgIDStr := r.URL.Query().Get("org_id")
-	orgID, err := uuid.Parse(orgIDStr)
+	// Extract organization ID from URL path
+	parts := strings.Split(r.URL.Path, "/")
+	if len(parts) < 4 {
+		http.Error(w, "Invalid URL", http.StatusBadRequest)
+		return
+	}
+
+	orgID, err := uuid.Parse(parts[2]) // /organizations/{id}/users
 	if err != nil {
 		http.Error(w, "Invalid organization ID", http.StatusBadRequest)
 		return
