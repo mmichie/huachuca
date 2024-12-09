@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: huachuca_user
+      POSTGRES_PASSWORD: huachuca_password
+      POSTGRES_DB: huachuca
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U huachuca_user -d huachuca"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  huachuca:
+    build:
+      context: .
+      target: development
+    volumes:
+      - .:/app
+      - go_modules:/go/pkg/mod
+    environment:
+      - DATABASE_URL=postgres://huachuca_user:huachuca_password@postgres:5432/huachuca?sslmode=disable
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REDIRECT_URL=http://localhost:8080/auth/callback/google
+      - ALLOWED_ORIGIN=http://localhost:3000
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  go_modules:
