@@ -3,12 +3,13 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 )
 
 type CreateOrganizationRequest struct {
-	Name      string `json:"name"`
+	Name       string `json:"name"`
 	OwnerEmail string `json:"owner_email"`
 	OwnerName  string `json:"owner_name"`
 }
@@ -53,8 +54,9 @@ func (s *Server) handleAddUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract organization ID from URL path
-	orgID, err := uuid.Parse(r.URL.Query().Get("org_id"))
+	// Extract organization ID from URL query
+	orgIDStr := r.URL.Query().Get("org_id")
+	orgID, err := uuid.Parse(orgIDStr)
 	if err != nil {
 		http.Error(w, "Invalid organization ID", http.StatusBadRequest)
 		return
@@ -90,7 +92,14 @@ func (s *Server) handleGetOrganizationUsers(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	orgID, err := uuid.Parse(r.URL.Query().Get("org_id"))
+	// Extract organization ID from URL path
+	parts := strings.Split(r.URL.Path, "/")
+	if len(parts) != 3 {
+		http.Error(w, "Invalid URL", http.StatusBadRequest)
+		return
+	}
+
+	orgID, err := uuid.Parse(parts[2])
 	if err != nil {
 		http.Error(w, "Invalid organization ID", http.StatusBadRequest)
 		return

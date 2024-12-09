@@ -5,17 +5,15 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 )
 
-// Server holds all the dependencies for our service
 type Server struct {
-	db     *DB // We'll implement this later
+	db     *DB
 	logger *slog.Logger
 }
 
-// NewServer creates a new instance of our server
 func NewServer(db *DB) *Server {
-	// Initialize structured logger
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
 	}))
@@ -26,7 +24,6 @@ func NewServer(db *DB) *Server {
 	}
 }
 
-// ServeHTTP implements the http.Handler interface
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.logger.Info("received request",
 		"method", r.Method,
@@ -34,13 +31,20 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"remote_addr", r.RemoteAddr,
 	)
 
-	switch r.URL.Path {
-	case "/health":
+	switch {
+	case r.URL.Path == "/health":
 		s.handleHealth(w, r)
+	case r.URL.Path == "/organizations":
+		s.handleCreateOrganization(w, r)
+	case strings.HasPrefix(r.URL.Path, "/organizations/users"):
+		s.handleAddUser(w, r)
+	case strings.HasPrefix(r.URL.Path, "/organizations/"):
+		s.handleGetOrganizationUsers(w, r)
 	default:
 		http.NotFound(w, r)
 	}
 }
+
 
 // handleHealth handles the health check endpoint
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
