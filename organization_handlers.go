@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"errors"
 
 	"github.com/google/uuid"
 )
@@ -27,8 +28,17 @@ func (s *Server) handleCreateOrganization(w http.ResponseWriter, r *http.Request
 
 	var req CreateOrganizationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.logger.Error("failed to decode request", "error", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := ValidateCreateOrganizationRequest(&req); err != nil {
+		var valErr *ValidationError
+		if errors.As(err, &valErr) {
+			http.Error(w, valErr.Error(), http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 
@@ -54,22 +64,33 @@ func (s *Server) handleAddUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract organization ID from URL path
+	// Extract and validate organization ID from URL path
 	parts := strings.Split(r.URL.Path, "/")
 	if len(parts) < 4 {
 		http.Error(w, "Invalid URL", http.StatusBadRequest)
 		return
 	}
 
-	orgID, err := uuid.Parse(parts[2]) // /organizations/{id}/users
-	if err != nil {
-		http.Error(w, "Invalid organization ID", http.StatusBadRequest)
+	if err := ValidateUUID(parts[2]); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+
+	orgID, _ := uuid.Parse(parts[2]) // Already validated
 
 	var req AddUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := ValidateAddUserRequest(&req); err != nil {
+		var valErr *ValidationError
+		if errors.As(err, &valErr) {
+			http.Error(w, valErr.Error(), http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 
@@ -90,6 +111,7 @@ func (s *Server) handleAddUser(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(user)
 }
+
 
 func (s *Server) handleGetOrganizationUsers(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
