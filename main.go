@@ -101,13 +101,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/auth/refresh":
 		s.handleRefreshToken(w, r)
 		return
+	case "/csrf/token":
+		s.handleGetCSRFToken(w, r)
+		return
 	}
 
 	// Basic request validation first
 	if strings.Contains(r.URL.Path, "/organizations/") {
 		parts := strings.Split(r.URL.Path, "/")
 		if len(parts) >= 3 {
-			// Skip first empty part and "organizations"
 			if orgID := parts[2]; orgID != "" && orgID != "users" {
 				if _, err := uuid.Parse(orgID); err != nil {
 					http.Error(w, "Invalid organization ID format", http.StatusBadRequest)
@@ -117,23 +119,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Protected endpoints with authentication
+	// Protected endpoints with authentication and CSRF
 	protectedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/organizations":
 			s.auth.RequirePermissions(PermCreateOrg)(
-				http.HandlerFunc(s.handleCreateOrganization),
+				handlerFuncToHandler(s.CSRFHandler(s.handleCreateOrganization)),
 			).ServeHTTP(w, r)
 		case strings.HasPrefix(r.URL.Path, "/organizations/") && strings.HasSuffix(r.URL.Path, "/users"):
 			s.auth.RequirePermissions(PermInviteUser)(
 				s.auth.RequireSameOrg(
-					http.HandlerFunc(s.handleAddUser),
+					handlerFuncToHandler(s.CSRFHandler(s.handleAddUser)),
 				),
 			).ServeHTTP(w, r)
 		case strings.HasPrefix(r.URL.Path, "/organizations/"):
 			s.auth.RequirePermissions(PermReadOrg)(
 				s.auth.RequireSameOrg(
-					http.HandlerFunc(s.handleGetOrganizationUsers),
+					handlerFuncToHandler(s.handleGetOrganizationUsers),
 				),
 			).ServeHTTP(w, r)
 		default:
@@ -146,6 +148,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	// Force production environment so Secure cookies are set
+	os.Setenv("ENVIRONMENT", "production")
+
 	// Load configuration from environment
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
@@ -167,10 +172,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	csrfConfig := NewCSRFConfig()
+
 	// Create HTTP server with timeouts
 	httpServer := &http.Server{
 		Addr:         ":8080",
-		Handler:      srv,
+		Handler:      NewCSRFMiddleware(csrfConfig)(srv),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -179,7 +186,7 @@ func main() {
 	// Start server in goroutine
 	go func() {
 		srv.logger.Info("starting server", "addr", httpServer.Addr)
-		if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			srv.logger.Error("server error", "error", err)
 			os.Exit(1)
 		}
