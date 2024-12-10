@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -22,11 +23,23 @@ type Server struct {
 	oauth        *OAuthConfig
 	cors         *CORSMiddleware
 	health       *HealthChecker
+	stateStore   *StateStore
+}
+
+func (s *Server) logError(err error, msg string) {
+	errStr := err.Error()
+	errStr = regexp.MustCompile(`(?i)(sql|database|token|password|secret|key)`).
+		ReplaceAllString(errStr, "[REDACTED]")
+
+	s.logger.Error(msg,
+		"error_type", fmt.Sprintf("%T", err),
+		"sanitized_error", errStr,
+	)
 }
 
 func NewServer(db *DB) (*Server, error) {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
+		Level: slog.LevelInfo,
 	}))
 
 	tokenManager, err := NewTokenManager()
@@ -34,12 +47,16 @@ func NewServer(db *DB) (*Server, error) {
 		return nil, err
 	}
 
+	// Initialize state store with 15-minute cleanup interval
+	stateStore := NewStateStore(15 * time.Minute)
+
 	srv := &Server{
 		db:           db,
 		logger:       logger,
 		tokenManager: tokenManager,
 		oauth:        NewOAuthConfig(),
 		cors:         NewCORSMiddleware(NewCORSConfig()),
+		stateStore:   stateStore,
 	}
 
 	srv.auth = NewAuthMiddleware(tokenManager, db)

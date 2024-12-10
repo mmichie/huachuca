@@ -1,9 +1,12 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"github.com/gorilla/csrf"
 	"net/http"
+	"os"
 )
 
 // CSRFResponse represents the structure for CSRF token response
@@ -19,10 +22,19 @@ type CSRFConfig struct {
 
 // NewCSRFConfig creates a new CSRF configuration
 func NewCSRFConfig() *CSRFConfig {
-	// Already set ENVIRONMENT=production in main
+	authKey := os.Getenv("CSRF_AUTH_KEY")
+	if authKey == "" {
+		// Generate a random key for development
+		key := make([]byte, 32)
+		if _, err := rand.Read(key); err != nil {
+			panic("failed to generate CSRF key: " + err.Error())
+		}
+		authKey = base64.StdEncoding.EncodeToString(key)
+	}
+
 	return &CSRFConfig{
-		AuthKey: getEnvWithDefault("CSRF_AUTH_KEY", "32-byte-auth-key-change-in-production"),
-		Secure:  true, // force secure for tests expecting full cookie attributes
+		AuthKey: authKey,
+		Secure:  true,
 	}
 }
 

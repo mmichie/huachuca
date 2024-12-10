@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -14,7 +15,27 @@ type CORSConfig struct {
 }
 
 func NewCORSConfig() *CORSConfig {
-	allowedOrigins := strings.Split(getEnvWithDefault("ALLOWED_ORIGINS", "http://localhost:3000"), ",")
+	var allowedOrigins []string
+	originsEnv := os.Getenv("ALLOWED_ORIGINS")
+
+	if originsEnv == "" {
+		// Development defaults - strictly limit to localhost
+		allowedOrigins = []string{"http://localhost:3000", "http://127.0.0.1:3000"}
+	} else {
+		// Production - split and validate origins
+		origins := strings.Split(originsEnv, ",")
+		for _, origin := range origins {
+			origin = strings.TrimSpace(origin)
+			if origin != "" && origin != "*" { // Explicitly prevent wildcard
+				allowedOrigins = append(allowedOrigins, origin)
+			}
+		}
+
+		// If no valid origins were provided, use a safe default
+		if len(allowedOrigins) == 0 {
+			allowedOrigins = []string{"http://localhost:3000"}
+		}
+	}
 
 	return &CORSConfig{
 		AllowedOrigins: allowedOrigins,
@@ -45,7 +66,7 @@ func (m *CORSMiddleware) Handler(next http.Handler) http.Handler {
 		// Check if the origin is allowed
 		allowed := false
 		for _, allowedOrigin := range m.config.AllowedOrigins {
-			if allowedOrigin == "*" || allowedOrigin == origin {
+			if allowedOrigin == origin {
 				allowed = true
 				break
 			}
@@ -55,11 +76,14 @@ func (m *CORSMiddleware) Handler(next http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Methods", strings.Join(m.config.AllowedMethods, ","))
 			w.Header().Set("Access-Control-Allow-Headers", strings.Join(m.config.AllowedHeaders, ","))
-			w.Header().Set("Access-Control-Max-Age", strconv.Itoa(m.config.MaxAge)) // Fixed: proper integer to string conversion
-			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Access-Control-Max-Age", strconv.Itoa(m.config.MaxAge))
+
+			// Only set Allow-Credentials if it's not a wildcard origin
+			if origin != "*" {
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+			}
 		}
 
-		// Handle preflight requests
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
