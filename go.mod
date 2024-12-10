@@ -1,4 +1,4 @@
-module huachuca
+module github.com/mmichie/huachuca
 
 go 1.23.4
 
