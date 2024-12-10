@@ -20,11 +20,7 @@ type Server struct {
 	auth         *AuthMiddleware
 	oauth        *OAuthConfig
 	cors         *CORSMiddleware
-}
-
-type HealthResponse struct {
-	Status string `json:"status"`
-	DB     bool   `json:"database"`
+	health       *HealthChecker
 }
 
 func NewServer(db *DB) (*Server, error) {
@@ -46,7 +42,36 @@ func NewServer(db *DB) (*Server, error) {
 	}
 
 	srv.auth = NewAuthMiddleware(tokenManager, db)
+	srv.health = NewHealthChecker("0.1.0", db, logger)
 	return srv, nil
+}
+
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	response := s.health.CheckHealth(ctx)
+
+	w.Header().Set("Content-Type", "application/json")
+	if response.Status != StatusHealthy {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}
+
+	s.logger.Info("health check completed",
+		"status", response.Status,
+		"checks", len(response.Checks),
+		"duration", time.Since(response.CheckTime),
+	)
+
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		s.logger.Error("failed to encode health response", "error", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -104,25 +129,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	})
 
 	s.cors.Handler(handler).ServeHTTP(w, r)
-}
-
-func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-
-	resp := HealthResponse{
-		Status: "ok",
-		DB:     s.db != nil && s.db.Ping() == nil,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		s.logger.Error("failed to encode response", "error", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
 }
 
 func main() {
