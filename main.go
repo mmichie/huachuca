@@ -92,11 +92,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/health":
 		s.handleHealth(w, r)
 		return
+	case "/.well-known/jwks.json":
+		s.handleJWKS(w, r)
+		return
 	case "/auth/login/google":
 		s.handleGoogleLogin(w, r)
-		return
-	case "/auth/callback/google":
-		s.handleGoogleCallback(w, r)
 		return
 	case "/auth/refresh":
 		s.handleRefreshToken(w, r)
