@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -371,5 +372,175 @@ t.Run("Error Cases", func(t *testing.T) {
 
 		// Restore valid token
 		suite.token = oldToken
+	})
+}
+
+
+func TestAuthFlow(t *testing.T) {
+	suite := setupIntegrationTest(t)
+	defer suite.cleanupDB.teardown(t)
+
+	t.Run("OAuth and Refresh Token Flow", func(t *testing.T) {
+		// Use initial token for authorization
+		createOrgReq := CreateOrganizationRequest{
+			Name:       "Test OAuth Org",
+			OwnerEmail: "oauth.test@example.com",
+			OwnerName:  "OAuth Test User",
+		}
+
+		// Create organization
+		w := suite.makeRequest(t, http.MethodPost, "/organizations", createOrgReq)
+		require.Equal(t, http.StatusOK, w.Code)
+
+		var org Organization
+		err := json.NewDecoder(w.Body).Decode(&org)
+		require.NoError(t, err)
+
+		// Get the created user and generate tokens
+		time.Sleep(100 * time.Millisecond) // Small delay to ensure db write is complete
+
+		var user User
+		err = suite.db.GetContext(context.Background(), &user,
+			`SELECT * FROM users WHERE email = $1`, createOrgReq.OwnerEmail)
+		require.NoError(t, err)
+		require.NotEmpty(t, user.ID)
+
+		// Generate refresh token
+		refreshToken, err := suite.db.CreateRefreshToken(context.Background(), user.ID)
+		require.NoError(t, err)
+
+		// Verify refresh token was stored
+		var count int
+		err = suite.db.GetContext(context.Background(), &count,
+			`SELECT COUNT(*) FROM refresh_tokens WHERE user_id = $1`, user.ID)
+		require.NoError(t, err)
+		require.Equal(t, 1, count)
+
+		// Test token refresh
+		refreshReq := RefreshTokenRequest{
+			RefreshToken: refreshToken,
+		}
+
+		w = suite.makeRequest(t, http.MethodPost, "/auth/refresh", refreshReq)
+		require.Equal(t, http.StatusOK, w.Code)
+
+		var tokenResp TokenResponse
+		err = json.NewDecoder(w.Body).Decode(&tokenResp)
+		require.NoError(t, err)
+		require.NotEmpty(t, tokenResp.AccessToken)
+		require.NotEmpty(t, tokenResp.RefreshToken)
+		require.Equal(t, 900, tokenResp.ExpiresIn)
+
+		// Verify old refresh token was replaced
+		err = suite.db.GetContext(context.Background(), &count,
+			`SELECT COUNT(*) FROM refresh_tokens WHERE user_id = $1`, user.ID)
+		require.NoError(t, err)
+		require.Equal(t, 1, count, "Should still have exactly one refresh token")
+
+		// Try to use the old refresh token (should fail)
+		refreshReq.RefreshToken = refreshToken
+		w = suite.makeRequest(t, http.MethodPost, "/auth/refresh", refreshReq)
+		require.Equal(t, http.StatusUnauthorized, w.Code)
+	})
+
+	t.Run("Refresh Token Expiration", func(t *testing.T) {
+		// Create a user with an expired refresh token
+		createOrgReq := CreateOrganizationRequest{
+			Name:       "Expired Token Org",
+			OwnerEmail: "expired.test@example.com",
+			OwnerName:  "Expired Test User",
+		}
+
+		w := suite.makeRequest(t, http.MethodPost, "/organizations", createOrgReq)
+		require.Equal(t, http.StatusOK, w.Code)
+
+		time.Sleep(100 * time.Millisecond) // Small delay to ensure db write is complete
+
+		var user User
+		err := suite.db.GetContext(context.Background(), &user,
+			`SELECT * FROM users WHERE email = $1`, createOrgReq.OwnerEmail)
+		require.NoError(t, err)
+
+		// Create expired refresh token
+		token, err := GenerateRefreshToken()
+		require.NoError(t, err)
+
+		tokenHash := HashToken(token)
+		_, err = suite.db.ExecContext(context.Background(), `
+			INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at)
+			VALUES ($1, $2, $3, $4)
+		`, uuid.New(), user.ID, tokenHash, time.Now().Add(-24*time.Hour))
+		require.NoError(t, err)
+
+		// Try to use expired token
+		refreshReq := RefreshTokenRequest{
+			RefreshToken: token,
+		}
+
+		w = suite.makeRequest(t, http.MethodPost, "/auth/refresh", refreshReq)
+		require.Equal(t, http.StatusUnauthorized, w.Code)
+
+		// Verify expired token was cleaned up
+		time.Sleep(100 * time.Millisecond) // Small delay to ensure cleanup is complete
+
+		var count int
+		err = suite.db.GetContext(context.Background(), &count,
+			`SELECT COUNT(*) FROM refresh_tokens WHERE user_id = $1`, user.ID)
+		require.NoError(t, err)
+		require.Equal(t, 0, count, "Expired token should be deleted")
+	})
+
+	t.Run("Invalid Refresh Token", func(t *testing.T) {
+		refreshReq := RefreshTokenRequest{
+			RefreshToken: "invalid-token",
+		}
+
+		w := suite.makeRequest(t, http.MethodPost, "/auth/refresh", refreshReq)
+		require.Equal(t, http.StatusUnauthorized, w.Code)
+	})
+
+	t.Run("Multiple Login Sessions", func(t *testing.T) {
+		// Create initial user
+		createOrgReq := CreateOrganizationRequest{
+			Name:       "Multi Session Org",
+			OwnerEmail: "multi.test@example.com",
+			OwnerName:  "Multi Test User",
+		}
+
+		w := suite.makeRequest(t, http.MethodPost, "/organizations", createOrgReq)
+		require.Equal(t, http.StatusOK, w.Code)
+
+		time.Sleep(100 * time.Millisecond) // Small delay to ensure db write is complete
+
+		var user User
+		err := suite.db.GetContext(context.Background(), &user,
+			`SELECT * FROM users WHERE email = $1`, createOrgReq.OwnerEmail)
+		require.NoError(t, err)
+
+		// Create first refresh token
+		token1, err := suite.db.CreateRefreshToken(context.Background(), user.ID)
+		require.NoError(t, err)
+
+		// Verify first token works
+		refreshReq := RefreshTokenRequest{
+			RefreshToken: token1,
+		}
+
+		w = suite.makeRequest(t, http.MethodPost, "/auth/refresh", refreshReq)
+		require.Equal(t, http.StatusOK, w.Code)
+
+		// Create second refresh token (simulating login from another device)
+		token2, err := suite.db.CreateRefreshToken(context.Background(), user.ID)
+		require.NoError(t, err)
+
+		// Try to use the first token (should fail as it was invalidated)
+		refreshReq.RefreshToken = token1
+		w = suite.makeRequest(t, http.MethodPost, "/auth/refresh", refreshReq)
+		require.Equal(t, http.StatusUnauthorized, w.Code)
+
+		// Verify second token works
+		refreshReq.RefreshToken = token2
+		w = suite.makeRequest(t, http.MethodPost, "/auth/refresh", refreshReq)
+		require.Equal(t, http.StatusOK, w.Code)
 	})
 }

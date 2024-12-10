@@ -10,6 +10,16 @@ import (
 	"github.com/google/uuid"
 )
 
+type TokenResponse struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int    `json:"expires_in"` // seconds until access token expires
+}
+
+type RefreshTokenRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
 func generateState() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -77,18 +87,28 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Create new user if not found
 		user = &User{
-			ID:          uuid.New(),
-			Email:       googleUser.Email,
-			Name:        googleUser.Name,
-			Role:        "owner", // First user becomes owner
-			Permissions: Permissions{"admin": true},
+			ID:    uuid.New(),
+			Email: googleUser.Email,
+			Name:  googleUser.Name,
+			Role:  "owner", // First user becomes owner
+			Permissions: Permissions{
+				string(PermCreateOrg):     true,
+				string(PermReadOrg):       true,
+				string(PermUpdateOrg):     true,
+				string(PermDeleteOrg):     true,
+				string(PermInviteUser):    true,
+				string(PermRemoveUser):    true,
+				string(PermUpdateUser):    true,
+				string(PermManageSettings): true,
+				"admin":                   true,
+			},
 		}
 
 		// Create organization for new user
 		org := &Organization{
 			ID:              uuid.New(),
-			Name:           fmt.Sprintf("%s's Organization", googleUser.Name),
-			OwnerID:        user.ID,
+			Name:            fmt.Sprintf("%s's Organization", googleUser.Name),
+			OwnerID:         user.ID,
 			SubscriptionTier: "free",
 			MaxSubAccounts:  5,
 		}
@@ -102,17 +122,89 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Generate JWT token
-	jwtToken, err := s.tokenManager.GenerateToken(user)
+	// Generate JWT access token
+	accessToken, err := s.tokenManager.GenerateToken(user)
 	if err != nil {
-		s.logger.Error("failed to generate token", "error", err)
+		s.logger.Error("failed to generate access token", "error", err)
 		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
 		return
 	}
 
-	// Return JWT token
+	// Generate refresh token
+	refreshToken, err := s.db.CreateRefreshToken(r.Context(), user.ID)
+	if err != nil {
+		s.logger.Error("failed to create refresh token", "error", err)
+		http.Error(w, "Failed to generate refresh token", http.StatusInternalServerError)
+		return
+	}
+
+	// Return tokens
+	response := TokenResponse{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		ExpiresIn:    900, // 15 minutes in seconds
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"token": jwtToken,
-	})
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		s.logger.Error("failed to encode response", "error", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req RefreshTokenRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate refresh token
+	user, err := s.db.ValidateRefreshToken(r.Context(), req.RefreshToken)
+	if err != nil {
+		switch err {
+		case ErrRefreshTokenNotFound:
+			http.Error(w, "Invalid refresh token", http.StatusUnauthorized)
+		case ErrRefreshTokenExpired:
+			http.Error(w, "Refresh token expired", http.StatusUnauthorized)
+		default:
+			s.logger.Error("failed to validate refresh token", "error", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Generate new access token
+	accessToken, err := s.tokenManager.GenerateToken(user)
+	if err != nil {
+		s.logger.Error("failed to generate access token", "error", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Generate new refresh token
+	refreshToken, err := s.db.CreateRefreshToken(r.Context(), user.ID)
+	if err != nil {
+		s.logger.Error("failed to create refresh token", "error", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Return new tokens
+	response := TokenResponse{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		ExpiresIn:    900, // 15 minutes in seconds
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		s.logger.Error("failed to encode response", "error", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
 }
