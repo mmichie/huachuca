@@ -37,7 +37,7 @@ func (s *Server) handleGoogleLogin(w http.ResponseWriter, r *http.Request) {
 
 	state, err := generateState()
 	if err != nil {
-		s.logError(err, "failed to generate state")
+		s.logger.Error("failed to generate state", "error", err)
 		http.Error(w, "Authentication failed", http.StatusInternalServerError)
 		return
 	}
@@ -75,14 +75,14 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 
 	token, err := s.oauth.Exchange(r.Context(), code)
 	if err != nil {
-		s.logError(err, "failed to exchange token")
+		s.logger.Error("failed to exchange token", "error", err)
 		http.Error(w, "Authentication failed", http.StatusInternalServerError)
 		return
 	}
 
 	googleUser, err := s.oauth.GetUserInfo(r.Context(), token)
 	if err != nil {
-		s.logError(err, "failed to get user info")
+		s.logger.Error("failed to get user info", "error", err)
 		http.Error(w, "Authentication failed", http.StatusInternalServerError)
 		return
 	}
@@ -91,7 +91,7 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	var user *User
 	user, err = s.db.GetUserByEmail(r.Context(), googleUser.Email)
 	if err != nil {
-		s.logError(err, "database error during user lookup")
+		s.logger.Error("database error during user lookup", "error", err)
 		http.Error(w, "Authentication failed", http.StatusInternalServerError)
 		return
 	}
@@ -127,7 +127,7 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 		user.OrganizationID = org.ID
 
 		if err := s.db.CreateOrganizationWithOwner(r.Context(), org, user); err != nil {
-			s.logError(err, "failed to create organization and user")
+			s.logger.Error("failed to create organization and user", "error", err)
 			http.Error(w, "Account creation failed", http.StatusInternalServerError)
 			return
 		}
@@ -136,7 +136,7 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	// Generate JWT access token
 	accessToken, err := s.tokenManager.GenerateToken(user)
 	if err != nil {
-		s.logError(err, "failed to generate access token")
+		s.logger.Error("failed to generate access token", "error", err)
 		http.Error(w, "Authentication failed", http.StatusInternalServerError)
 		return
 	}
@@ -144,7 +144,7 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	// Generate refresh token
 	refreshToken, err := s.db.CreateRefreshToken(r.Context(), user.ID)
 	if err != nil {
-		s.logError(err, "failed to create refresh token")
+		s.logger.Error("failed to create refresh token", "error", err)
 		http.Error(w, "Authentication failed", http.StatusInternalServerError)
 		return
 	}
@@ -158,7 +158,7 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		s.logError(err, "failed to encode response")
+		s.logger.Error("failed to encode response", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -183,7 +183,7 @@ func (s *Server) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 		case ErrRefreshTokenNotFound, ErrRefreshTokenExpired:
 			http.Error(w, "Invalid or expired refresh token", http.StatusUnauthorized)
 		default:
-			s.logError(err, "failed to validate refresh token")
+			s.logger.Error("failed to validate refresh token", "error", err)
 			http.Error(w, "Authentication failed", http.StatusInternalServerError)
 		}
 		return
@@ -192,7 +192,7 @@ func (s *Server) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 	// Generate new access token
 	accessToken, err := s.tokenManager.GenerateToken(user)
 	if err != nil {
-		s.logError(err, "failed to generate access token")
+		s.logger.Error("failed to generate access token", "error", err)
 		http.Error(w, "Authentication failed", http.StatusInternalServerError)
 		return
 	}
@@ -200,7 +200,7 @@ func (s *Server) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 	// Generate new refresh token
 	refreshToken, err := s.db.CreateRefreshToken(r.Context(), user.ID)
 	if err != nil {
-		s.logError(err, "failed to create refresh token")
+		s.logger.Error("failed to create refresh token", "error", err)
 		http.Error(w, "Authentication failed", http.StatusInternalServerError)
 		return
 	}
@@ -214,7 +214,7 @@ func (s *Server) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		s.logError(err, "failed to encode response")
+		s.logger.Error("failed to encode response", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}

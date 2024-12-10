@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -24,17 +23,6 @@ type Server struct {
 	cors         *CORSMiddleware
 	health       *HealthChecker
 	stateStore   *StateStore
-}
-
-func (s *Server) logError(err error, msg string) {
-	errStr := err.Error()
-	errStr = regexp.MustCompile(`(?i)(sql|database|token|password|secret|key)`).
-		ReplaceAllString(errStr, "[REDACTED]")
-
-	s.logger.Error(msg,
-		"error_type", fmt.Sprintf("%T", err),
-		"sanitized_error", errStr,
-	)
 }
 
 func NewServer(db *DB) (*Server, error) {
