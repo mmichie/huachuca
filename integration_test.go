@@ -32,29 +32,29 @@ func setupIntegrationTest(t *testing.T) *IntegrationTestSuite {
 
 	// Create initial test user and organization
 	initialUser := &User{
-		ID:          uuid.New(),
-		Email:       "initial@test.com",
-		Name:        "Initial User",
-		Role:        "owner",
+		ID:    uuid.New(),
+		Email: "initial@test.com",
+		Name:  "Initial User",
+		Role:  "owner",
 		Permissions: Permissions{
-			string(PermCreateOrg):     true,
-			string(PermReadOrg):       true,
-			string(PermUpdateOrg):     true,
-			string(PermDeleteOrg):     true,
-			string(PermInviteUser):    true,
-			string(PermRemoveUser):    true,
-			string(PermUpdateUser):    true,
+			string(PermCreateOrg):      true,
+			string(PermReadOrg):        true,
+			string(PermUpdateOrg):      true,
+			string(PermDeleteOrg):      true,
+			string(PermInviteUser):     true,
+			string(PermRemoveUser):     true,
+			string(PermUpdateUser):     true,
 			string(PermManageSettings): true,
-			"admin":                   true,
+			"admin":                    true,
 		},
 	}
 
 	initialOrg := &Organization{
-		ID:              uuid.New(),
-		Name:            "Initial Org",
-		OwnerID:         initialUser.ID,
+		ID:               uuid.New(),
+		Name:             "Initial Org",
+		OwnerID:          initialUser.ID,
 		SubscriptionTier: "free",
-		MaxSubAccounts:  5,
+		MaxSubAccounts:   5,
 	}
 
 	// Set the organization ID for the user
@@ -187,7 +187,7 @@ func TestUserFlow(t *testing.T) {
 		suite.token = originalToken
 	})
 
-t.Run("Error Cases", func(t *testing.T) {
+	t.Run("Error Cases", func(t *testing.T) {
 		// Test duplicate email
 		createOrgReq := CreateOrganizationRequest{
 			Name:       "Another Org",
@@ -374,7 +374,6 @@ t.Run("Error Cases", func(t *testing.T) {
 		suite.token = oldToken
 	})
 }
-
 
 func TestAuthFlow(t *testing.T) {
 	suite := setupIntegrationTest(t)

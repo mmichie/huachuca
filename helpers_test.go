@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
+	_ "github.com/lib/pq"
+	"github.com/pressly/goose/v3"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
-	_ "github.com/lib/pq"
-	"github.com/pressly/goose/v3"
 )
 
 //go:embed migrations/*.sql

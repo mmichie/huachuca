@@ -9,22 +9,22 @@ import (
 )
 
 type Organization struct {
-	ID              uuid.UUID          `db:"id" json:"id"`
-	Name            string             `db:"name" json:"name"`
-	OwnerID         uuid.UUID          `db:"owner_id" json:"owner_id"`
-	SubscriptionTier string            `db:"subscription_tier" json:"subscription_tier"`
-	MaxSubAccounts  int               `db:"max_sub_accounts" json:"max_sub_accounts"`
-	CreatedAt       time.Time          `db:"created_at" json:"created_at"`
+	ID               uuid.UUID `db:"id" json:"id"`
+	Name             string    `db:"name" json:"name"`
+	OwnerID          uuid.UUID `db:"owner_id" json:"owner_id"`
+	SubscriptionTier string    `db:"subscription_tier" json:"subscription_tier"`
+	MaxSubAccounts   int       `db:"max_sub_accounts" json:"max_sub_accounts"`
+	CreatedAt        time.Time `db:"created_at" json:"created_at"`
 }
 
 type User struct {
-	ID             uuid.UUID          `db:"id" json:"id"`
-	Email          string             `db:"email" json:"email"`
-	Name           string             `db:"name" json:"name"`
-	OrganizationID uuid.UUID          `db:"organization_id" json:"organization_id"`
-	Role           string             `db:"role" json:"role"`
-	Permissions    Permissions        `db:"permissions" json:"permissions"`
-	CreatedAt      time.Time          `db:"created_at" json:"created_at"`
+	ID             uuid.UUID   `db:"id" json:"id"`
+	Email          string      `db:"email" json:"email"`
+	Name           string      `db:"name" json:"name"`
+	OrganizationID uuid.UUID   `db:"organization_id" json:"organization_id"`
+	Role           string      `db:"role" json:"role"`
+	Permissions    Permissions `db:"permissions" json:"permissions"`
+	CreatedAt      time.Time   `db:"created_at" json:"created_at"`
 }
 
 type Permissions map[string]bool

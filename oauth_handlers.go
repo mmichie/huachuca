@@ -92,25 +92,25 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 			Name:  googleUser.Name,
 			Role:  "owner", // First user becomes owner
 			Permissions: Permissions{
-				string(PermCreateOrg):     true,
-				string(PermReadOrg):       true,
-				string(PermUpdateOrg):     true,
-				string(PermDeleteOrg):     true,
-				string(PermInviteUser):    true,
-				string(PermRemoveUser):    true,
-				string(PermUpdateUser):    true,
+				string(PermCreateOrg):      true,
+				string(PermReadOrg):        true,
+				string(PermUpdateOrg):      true,
+				string(PermDeleteOrg):      true,
+				string(PermInviteUser):     true,
+				string(PermRemoveUser):     true,
+				string(PermUpdateUser):     true,
 				string(PermManageSettings): true,
-				"admin":                   true,
+				"admin":                    true,
 			},
 		}
 
 		// Create organization for new user
 		org := &Organization{
-			ID:              uuid.New(),
-			Name:            fmt.Sprintf("%s's Organization", googleUser.Name),
-			OwnerID:         user.ID,
+			ID:               uuid.New(),
+			Name:             fmt.Sprintf("%s's Organization", googleUser.Name),
+			OwnerID:          user.ID,
 			SubscriptionTier: "free",
-			MaxSubAccounts:  5,
+			MaxSubAccounts:   5,
 		}
 
 		user.OrganizationID = org.ID

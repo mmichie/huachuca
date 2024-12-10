@@ -76,73 +76,73 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-    s.logger.Info("received request",
-        "method", r.Method,
-        "path", r.URL.Path,
-        "remote_addr", r.RemoteAddr,
-    )
+	s.logger.Info("received request",
+		"method", r.Method,
+		"path", r.URL.Path,
+		"remote_addr", r.RemoteAddr,
+	)
 
-    // Set security headers
-    w.Header().Set("X-Frame-Options", "DENY")
-    w.Header().Set("X-Content-Type-Options", "nosniff")
-    w.Header().Set("X-XSS-Protection", "1; mode=block")
+	// Set security headers
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-XSS-Protection", "1; mode=block")
 
-    // Public endpoints
-    switch r.URL.Path {
-    case "/health":
-        s.handleHealth(w, r)
-        return
-    case "/auth/login/google":
-        s.handleGoogleLogin(w, r)
-        return
-    case "/auth/callback/google":
-        s.handleGoogleCallback(w, r)
-        return
-    case "/auth/refresh":
-        s.handleRefreshToken(w, r)
-        return
-    }
+	// Public endpoints
+	switch r.URL.Path {
+	case "/health":
+		s.handleHealth(w, r)
+		return
+	case "/auth/login/google":
+		s.handleGoogleLogin(w, r)
+		return
+	case "/auth/callback/google":
+		s.handleGoogleCallback(w, r)
+		return
+	case "/auth/refresh":
+		s.handleRefreshToken(w, r)
+		return
+	}
 
-    // Basic request validation first
-    if strings.Contains(r.URL.Path, "/organizations/") {
-        parts := strings.Split(r.URL.Path, "/")
-        if len(parts) >= 3 {
-            // Skip first empty part and "organizations"
-            if orgID := parts[2]; orgID != "" && orgID != "users" {
-                if _, err := uuid.Parse(orgID); err != nil {
-                    http.Error(w, "Invalid organization ID format", http.StatusBadRequest)
-                    return
-                }
-            }
-        }
-    }
+	// Basic request validation first
+	if strings.Contains(r.URL.Path, "/organizations/") {
+		parts := strings.Split(r.URL.Path, "/")
+		if len(parts) >= 3 {
+			// Skip first empty part and "organizations"
+			if orgID := parts[2]; orgID != "" && orgID != "users" {
+				if _, err := uuid.Parse(orgID); err != nil {
+					http.Error(w, "Invalid organization ID format", http.StatusBadRequest)
+					return
+				}
+			}
+		}
+	}
 
-    // Protected endpoints with authentication
-    protectedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        switch {
-        case r.URL.Path == "/organizations":
-            s.auth.RequirePermissions(PermCreateOrg)(
-                http.HandlerFunc(s.handleCreateOrganization),
-            ).ServeHTTP(w, r)
-        case strings.HasPrefix(r.URL.Path, "/organizations/") && strings.HasSuffix(r.URL.Path, "/users"):
-            s.auth.RequirePermissions(PermInviteUser)(
-                s.auth.RequireSameOrg(
-                    http.HandlerFunc(s.handleAddUser),
-                ),
-            ).ServeHTTP(w, r)
-        case strings.HasPrefix(r.URL.Path, "/organizations/"):
-            s.auth.RequirePermissions(PermReadOrg)(
-                s.auth.RequireSameOrg(
-                    http.HandlerFunc(s.handleGetOrganizationUsers),
-                ),
-            ).ServeHTTP(w, r)
-        default:
-            http.NotFound(w, r)
-        }
-    })
+	// Protected endpoints with authentication
+	protectedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/organizations":
+			s.auth.RequirePermissions(PermCreateOrg)(
+				http.HandlerFunc(s.handleCreateOrganization),
+			).ServeHTTP(w, r)
+		case strings.HasPrefix(r.URL.Path, "/organizations/") && strings.HasSuffix(r.URL.Path, "/users"):
+			s.auth.RequirePermissions(PermInviteUser)(
+				s.auth.RequireSameOrg(
+					http.HandlerFunc(s.handleAddUser),
+				),
+			).ServeHTTP(w, r)
+		case strings.HasPrefix(r.URL.Path, "/organizations/"):
+			s.auth.RequirePermissions(PermReadOrg)(
+				s.auth.RequireSameOrg(
+					http.HandlerFunc(s.handleGetOrganizationUsers),
+				),
+			).ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
 
-    // Apply authentication middleware after validation
-    s.auth.RequireAuth(protectedHandler).ServeHTTP(w, r)
+	// Apply authentication middleware after validation
+	s.auth.RequireAuth(protectedHandler).ServeHTTP(w, r)
 }
 
 func main() {

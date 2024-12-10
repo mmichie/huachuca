@@ -1,10 +1,10 @@
 package main
 
 import (
-	"github.com/jmoiron/sqlx"
-	"github.com/google/uuid"
-	_ "github.com/lib/pq"
 	"context"
+	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
+	_ "github.com/lib/pq"
 )
 
 // DB wraps sqlx.DB to add custom functionality
@@ -30,7 +30,6 @@ func NewDB(dataSourceName string) (*DB, error) {
 func (db *DB) Ping() error {
 	return db.DB.Ping()
 }
-
 
 // GetUser retrieves a user by ID
 func (db *DB) GetUser(ctx context.Context, id uuid.UUID) (*User, error) {

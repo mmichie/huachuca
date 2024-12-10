@@ -11,10 +11,10 @@ func TestPermissions(t *testing.T) {
 	orgID := uuid.New()
 
 	tests := []struct {
-		name        string
-		user        User
-		permission  Permission
-		shouldHave  bool
+		name       string
+		user       User
+		permission Permission
+		shouldHave bool
 	}{
 		{
 			name: "Owner has create org permission",

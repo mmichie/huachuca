@@ -9,9 +9,9 @@ import (
 
 var (
 	ErrOrganizationNotFound = errors.New("organization not found")
-	ErrUserNotFound        = errors.New("user not found")
-	ErrEmailTaken         = errors.New("email already taken")
-	ErrMaxSubAccounts     = errors.New("maximum sub-accounts reached")
+	ErrUserNotFound         = errors.New("user not found")
+	ErrEmailTaken           = errors.New("email already taken")
+	ErrMaxSubAccounts       = errors.New("maximum sub-accounts reached")
 )
 
 // CreateOrganization creates a new organization and its owner
@@ -33,10 +33,10 @@ func (db *DB) CreateOrganization(ctx context.Context, name, ownerEmail, ownerNam
 	}
 
 	org := &Organization{
-		ID:              uuid.New(),
-		Name:            name,
+		ID:               uuid.New(),
+		Name:             name,
 		SubscriptionTier: "free",
-		MaxSubAccounts:  5,
+		MaxSubAccounts:   5,
 	}
 
 	// Create organization

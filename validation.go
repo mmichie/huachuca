@@ -27,7 +27,7 @@ func (e *ValidationError) Error() string {
 }
 
 const (
-	MaxNameLength        = 255
+	MaxNameLength       = 255
 	MaxEmailLength      = 255
 	MaxRequestBodyBytes = 1 * 1024 * 1024 // 1MB
 )

@@ -14,7 +14,7 @@ import (
 
 var (
 	ErrRefreshTokenNotFound = errors.New("refresh token not found")
-	ErrRefreshTokenExpired = errors.New("refresh token expired")
+	ErrRefreshTokenExpired  = errors.New("refresh token expired")
 )
 
 type RefreshToken struct {
@@ -42,73 +42,73 @@ func HashToken(token string) string {
 
 // CreateRefreshToken creates a new refresh token for a user
 func (db *DB) CreateRefreshToken(ctx context.Context, userID uuid.UUID) (string, error) {
-    // First cleanup any expired tokens
-    if err := db.CleanupExpiredTokens(ctx); err != nil {
-        return "", err
-    }
+	// First cleanup any expired tokens
+	if err := db.CleanupExpiredTokens(ctx); err != nil {
+		return "", err
+	}
 
-    // Generate the token
-    token, err := GenerateRefreshToken()
-    if err != nil {
-        return "", err
-    }
+	// Generate the token
+	token, err := GenerateRefreshToken()
+	if err != nil {
+		return "", err
+	}
 
-    // Hash the token for storage
-    tokenHash := HashToken(token)
+	// Hash the token for storage
+	tokenHash := HashToken(token)
 
-    // Delete any existing refresh tokens for this user
-    _, err = db.ExecContext(ctx, `
+	// Delete any existing refresh tokens for this user
+	_, err = db.ExecContext(ctx, `
         DELETE FROM refresh_tokens WHERE user_id = $1
     `, userID)
-    if err != nil {
-        return "", err
-    }
+	if err != nil {
+		return "", err
+	}
 
-    // Create new refresh token
-    refreshToken := &RefreshToken{
-        ID:        uuid.New(),
-        UserID:    userID,
-        TokenHash: tokenHash,
-        ExpiresAt: time.Now().Add(7 * 24 * time.Hour), // 7 days
-    }
+	// Create new refresh token
+	refreshToken := &RefreshToken{
+		ID:        uuid.New(),
+		UserID:    userID,
+		TokenHash: tokenHash,
+		ExpiresAt: time.Now().Add(7 * 24 * time.Hour), // 7 days
+	}
 
-    _, err = db.ExecContext(ctx, `
+	_, err = db.ExecContext(ctx, `
         INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at)
         VALUES ($1, $2, $3, $4)
     `, refreshToken.ID, refreshToken.UserID, refreshToken.TokenHash, refreshToken.ExpiresAt)
-    if err != nil {
-        return "", err
-    }
+	if err != nil {
+		return "", err
+	}
 
-    return token, nil
+	return token, nil
 }
 
 // ValidateRefreshToken validates a refresh token and returns the associated user
 func (db *DB) ValidateRefreshToken(ctx context.Context, token string) (*User, error) {
-    // First cleanup expired tokens
-    if err := db.CleanupExpiredTokens(ctx); err != nil {
-        return nil, err
-    }
+	// First cleanup expired tokens
+	if err := db.CleanupExpiredTokens(ctx); err != nil {
+		return nil, err
+	}
 
-    tokenHash := HashToken(token)
+	tokenHash := HashToken(token)
 
-    var rt RefreshToken
-    err := db.GetContext(ctx, &rt, `
+	var rt RefreshToken
+	err := db.GetContext(ctx, &rt, `
         SELECT * FROM refresh_tokens
         WHERE token_hash = $1
         AND expires_at > NOW()
     `, tokenHash)
-    if err != nil {
-        return nil, ErrRefreshTokenNotFound
-    }
+	if err != nil {
+		return nil, ErrRefreshTokenNotFound
+	}
 
-    // Get associated user
-    user, err := db.GetUser(ctx, rt.UserID)
-    if err != nil {
-        return nil, err
-    }
+	// Get associated user
+	user, err := db.GetUser(ctx, rt.UserID)
+	if err != nil {
+		return nil, err
+	}
 
-    return user, nil
+	return user, nil
 }
 
 // InvalidateRefreshToken deletes a refresh token
@@ -130,9 +130,9 @@ func (db *DB) InvalidateUserRefreshTokens(ctx context.Context, userID uuid.UUID)
 }
 
 func (db *DB) CleanupExpiredTokens(ctx context.Context) error {
-    _, err := db.ExecContext(ctx, `
+	_, err := db.ExecContext(ctx, `
         DELETE FROM refresh_tokens
         WHERE expires_at <= NOW()
     `)
-    return err
+	return err
 }

@@ -2,9 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
-	"errors"
 
 	"github.com/google/uuid"
 )
@@ -111,7 +111,6 @@ func (s *Server) handleAddUser(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(user)
 }
-
 
 func (s *Server) handleGetOrganizationUsers(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {

@@ -3,10 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"runtime"
 	"sync"
 	"time"
-	"runtime"
-	"log/slog"
 )
 
 type HealthStatus string
@@ -20,17 +20,17 @@ const (
 type HealthCheck struct {
 	Name     string            `json:"name"`
 	Status   HealthStatus      `json:"status"`
-	Error    string           `json:"error,omitempty"`
+	Error    string            `json:"error,omitempty"`
 	Details  map[string]string `json:"details,omitempty"`
-	Duration time.Duration    `json:"duration"`
+	Duration time.Duration     `json:"duration"`
 }
 
 type HealthResponse struct {
-	Status     HealthStatus    `json:"status"`
-	Version    string         `json:"version"`
-	Checks     []HealthCheck  `json:"checks"`
-	StartTime  time.Time      `json:"start_time"`
-	CheckTime  time.Time      `json:"check_time"`
+	Status    HealthStatus  `json:"status"`
+	Version   string        `json:"version"`
+	Checks    []HealthCheck `json:"checks"`
+	StartTime time.Time     `json:"start_time"`
+	CheckTime time.Time     `json:"check_time"`
 }
 
 type HealthChecker struct {

@@ -15,13 +15,13 @@ const (
 
 type AuthMiddleware struct {
 	tokenManager *TokenManager
-	db          *DB
+	db           *DB
 }
 
 func NewAuthMiddleware(tokenManager *TokenManager, db *DB) *AuthMiddleware {
 	return &AuthMiddleware{
 		tokenManager: tokenManager,
-		db:          db,
+		db:           db,
 	}
 }
 

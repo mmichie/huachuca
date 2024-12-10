@@ -14,7 +14,7 @@ type Permission string
 
 // Define our permissions
 const (
-	PermCreateOrg       Permission = "create:org"
+	PermCreateOrg      Permission = "create:org"
 	PermReadOrg        Permission = "read:org"
 	PermUpdateOrg      Permission = "update:org"
 	PermDeleteOrg      Permission = "delete:org"

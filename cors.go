@@ -55,7 +55,7 @@ func (m *CORSMiddleware) Handler(next http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Methods", strings.Join(m.config.AllowedMethods, ","))
 			w.Header().Set("Access-Control-Allow-Headers", strings.Join(m.config.AllowedHeaders, ","))
-			w.Header().Set("Access-Control-Max-Age", strconv.Itoa(m.config.MaxAge))  // Fixed: proper integer to string conversion
+			w.Header().Set("Access-Control-Max-Age", strconv.Itoa(m.config.MaxAge)) // Fixed: proper integer to string conversion
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 		}
 

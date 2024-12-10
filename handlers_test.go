@@ -30,11 +30,11 @@ func TestOrganizationHandlers(t *testing.T) {
 	}
 
 	testOrg := &Organization{
-		ID:              uuid.New(),
-		Name:            "Test Org",
-		OwnerID:         testUser.ID,  // Set the owner ID
+		ID:               uuid.New(),
+		Name:             "Test Org",
+		OwnerID:          testUser.ID, // Set the owner ID
 		SubscriptionTier: "free",
-		MaxSubAccounts:  5,
+		MaxSubAccounts:   5,
 	}
 
 	// Set the organization ID for the user
@@ -103,7 +103,7 @@ func TestOrganizationHandlers(t *testing.T) {
 		require.Equal(t, http.StatusConflict, w.Code)
 	})
 
-t.Run("Add User to Organization", func(t *testing.T) {
+	t.Run("Add User to Organization", func(t *testing.T) {
 		payload := AddUserRequest{
 			Email: "newuser@example.com",
 			Name:  "New User",
