@@ -19,6 +19,7 @@ type Server struct {
 	tokenManager *TokenManager
 	auth         *AuthMiddleware
 	oauth        *OAuthConfig
+	cors         *CORSMiddleware
 }
 
 type HealthResponse struct {
@@ -41,6 +42,7 @@ func NewServer(db *DB) (*Server, error) {
 		logger:       logger,
 		tokenManager: tokenManager,
 		oauth:        NewOAuthConfig(),
+		cors:         NewCORSMiddleware(NewCORSConfig()),
 	}
 
 	srv.auth = NewAuthMiddleware(tokenManager, db)
@@ -48,61 +50,60 @@ func NewServer(db *DB) (*Server, error) {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.logger.Info("received request",
-		"method", r.Method,
-		"path", r.URL.Path,
-		"remote_addr", r.RemoteAddr,
-	)
+	// Wrap the entire handler with CORS middleware
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.logger.Info("received request",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"remote_addr", r.RemoteAddr,
+		)
 
-	// Set security headers
-	w.Header().Set("X-Frame-Options", "DENY")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("X-XSS-Protection", "1; mode=block")
+		// Set security headers
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-XSS-Protection", "1; mode=block")
 
-	// Public endpoints
-	switch r.URL.Path {
-	case "/health":
-		s.handleHealth(w, r)
-		return
-	case "/auth/login/google":
-		s.handleGoogleLogin(w, r)
-		return
-	case "/auth/callback/google":
-		s.handleGoogleCallback(w, r)
-		return
-	}
-
-	// Protected endpoints with authentication
-	baseHandler := s.auth.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/organizations":
-			// Creating an org requires the create:org permission
-			s.auth.RequirePermissions(PermCreateOrg)(
-				http.HandlerFunc(s.handleCreateOrganization),
-			).ServeHTTP(w, r)
-
-		case strings.HasPrefix(r.URL.Path, "/organizations/") && strings.HasSuffix(r.URL.Path, "/users"):
-			// Adding users requires the invite:user permission and same org
-			s.auth.RequirePermissions(PermInviteUser)(
-				s.auth.RequireSameOrg(
-					http.HandlerFunc(s.handleAddUser),
-				),
-			).ServeHTTP(w, r)
-
-		case strings.HasPrefix(r.URL.Path, "/organizations/"):
-			// Reading org users requires the read:org permission and same org
-			s.auth.RequirePermissions(PermReadOrg)(
-				s.auth.RequireSameOrg(
-					http.HandlerFunc(s.handleGetOrganizationUsers),
-				),
-			).ServeHTTP(w, r)
-
-		default:
-			http.NotFound(w, r)
+		// Public endpoints
+		switch r.URL.Path {
+		case "/health":
+			s.handleHealth(w, r)
+			return
+		case "/auth/login/google":
+			s.handleGoogleLogin(w, r)
+			return
+		case "/auth/callback/google":
+			s.handleGoogleCallback(w, r)
+			return
 		}
-	}))
 
-	baseHandler.ServeHTTP(w, r)
+		// Protected endpoints with authentication
+		protectedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.URL.Path == "/organizations":
+				s.auth.RequirePermissions(PermCreateOrg)(
+					http.HandlerFunc(s.handleCreateOrganization),
+				).ServeHTTP(w, r)
+			case strings.HasPrefix(r.URL.Path, "/organizations/") && strings.HasSuffix(r.URL.Path, "/users"):
+				s.auth.RequirePermissions(PermInviteUser)(
+					s.auth.RequireSameOrg(
+						http.HandlerFunc(s.handleAddUser),
+					),
+				).ServeHTTP(w, r)
+			case strings.HasPrefix(r.URL.Path, "/organizations/"):
+				s.auth.RequirePermissions(PermReadOrg)(
+					s.auth.RequireSameOrg(
+						http.HandlerFunc(s.handleGetOrganizationUsers),
+					),
+				).ServeHTTP(w, r)
+			default:
+				http.NotFound(w, r)
+			}
+		})
+
+		s.auth.RequireAuth(protectedHandler).ServeHTTP(w, r)
+	})
+
+	s.cors.Handler(handler).ServeHTTP(w, r)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
